@@ -1,0 +1,36 @@
+{
+  "language": {
+    "source": "tr",
+    "target": "pt-BR"
+  },
+  "whisper": {
+    "model": "large-v3",
+    "compute_type_gpu": "float16",
+    "compute_type_cpu": "int8",
+    "beam_size": 5,
+    "vad_filter": true
+  },
+  "hardware": {
+    "use_gpu": true,
+    "cpu_threads": 0
+  },
+  "subtitles": {
+    "max_chars_per_line": 42,
+    "max_lines": 2,
+    "min_duration_seconds": 1.2,
+    "max_duration_seconds": 6.0,
+    "reading_chars_per_second": 17,
+    "gap_seconds": 0.08
+  },
+  "processing": {
+    "chunk_minutes": 25,
+    "keep_temp_audio": false
+  },
+  "interface": {
+    "theme": "dark",
+    "default_folder": "",
+    "recent_videos": [],
+    "window_width": 1100,
+    "window_height": 720
+  }
+}

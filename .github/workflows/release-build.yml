@@ -1,0 +1,37 @@
+name: Build Windows Executable
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install FFmpeg
+        uses: FedericoCarboni/setup-ffmpeg@v3
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Build executable
+        run: pyinstaller video-translator.spec --clean --noconfirm
+
+      - name: Compress artifact
+        run: Compress-Archive -Path dist\VideoTranslator\* -DestinationPath VideoTranslator-Windows.zip
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: VideoTranslator-Windows.zip
