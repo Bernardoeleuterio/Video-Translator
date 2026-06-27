@@ -28,8 +28,10 @@
   },
   "interface": {
     "theme": "dark",
-    "default_folder": "",
-    "recent_videos": [],
+    "default_folder": "C:\\Users\\berna\\Downloads",
+    "recent_videos": [
+      "C:\\Users\\berna\\Downloads\\YTDown_YouTube_Media_Wbx78L8dEPo_002_720p.mp4"
+    ],
     "window_width": 1100,
     "window_height": 720
   }

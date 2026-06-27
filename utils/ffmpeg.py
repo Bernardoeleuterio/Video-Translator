@@ -131,21 +131,60 @@ def burn_subtitle(video_path: Path, subtitle_path: Path) -> Path:
 
     try:
         output_path = video_path.with_name(f"{video_path.stem}.pt-BR.legendado{video_path.suffix}")
-        subtitle = str(subtitle_path).replace("\\", "/").replace(":", r"\:")
+        # To avoid path escaping issues in Windows, run ffmpeg inside subtitle_path.parent directory and use relative path
+        subtitle_filename = subtitle_path.name
         ffmpeg = _resolve_ffmpeg()
         command = [
             ffmpeg,
             "-y",
             "-i",
-            str(video_path),
+            str(video_path.resolve()),
             "-vf",
-            f"subtitles='{subtitle}'",
+            f"subtitles='{subtitle_filename}'",
             "-c:a",
             "copy",
-            str(output_path),
+            str(output_path.resolve()),
         ]
-        subprocess.run(command, capture_output=True, text=True, check=True)
+        # Run subprocess with cwd=subtitle_path.parent
+        subprocess.run(command, capture_output=True, text=True, check=True, cwd=str(subtitle_path.parent))
         return output_path
+    except subprocess.CalledProcessError as exc:
+        logging.exception("FFmpeg falhou ao embutir legenda (hard): %s", exc.stderr)
+        raise RuntimeError(f"Erro no FFmpeg: {exc.stderr}") from exc
     except Exception:
         logging.exception("Falha ao incorporar legenda ao video.")
+        raise
+
+
+def mux_subtitle(video_path: Path, subtitle_path: Path) -> Path:
+    """Mux the subtitle file as a text stream track (soft subtitle) without re-encoding."""
+
+    try:
+        output_path = video_path.with_name(f"{video_path.stem}.pt-BR.softsub{video_path.suffix}")
+        ffmpeg = _resolve_ffmpeg()
+        
+        # Select correct subtitle codec: MP4 uses mov_text, MKV/AVI uses srt (subrip)
+        suffix = video_path.suffix.lower()
+        codec = "mov_text" if suffix == ".mp4" else "srt"
+            
+        command = [
+            ffmpeg,
+            "-y",
+            "-i", str(video_path.resolve()),
+            "-i", str(subtitle_path.resolve()),
+            "-c:v", "copy",
+            "-c:a", "copy",
+            "-c:s", codec,
+            "-metadata:s:s:0", "language=por",
+            "-metadata:s:s:0", "title=Português (Brasil)",
+            str(output_path.resolve()),
+        ]
+        
+        subprocess.run(command, capture_output=True, text=True, check=True)
+        return output_path
+    except subprocess.CalledProcessError as exc:
+        logging.exception("FFmpeg falhou ao embutir legenda (soft): %s", exc.stderr)
+        raise RuntimeError(f"Erro no FFmpeg: {exc.stderr}") from exc
+    except Exception:
+        logging.exception("Falha ao incorporar legenda (soft) ao video.")
         raise

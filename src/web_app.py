@@ -34,8 +34,9 @@ JobStatus = Literal["queued", "running", "done", "error", "cancelled"]
 @dataclass(slots=True)
 class WebJob:
     id: str
-    video_path: Path
+    video_path: Path | None
     original_name: str
+    youtube_url: str | None = None
     status: JobStatus = "queued"
     stage: str = "model"
     percent: float = 0.0
@@ -64,15 +65,16 @@ class JobManager:
         self.worker = threading.Thread(target=self._run_forever, name="web-job-worker", daemon=True)
         self.worker.start()
 
-    def create_job(self, video_path: Path, original_name: str) -> WebJob:
+    def create_job(self, video_path: Path | None, original_name: str, youtube_url: str | None = None) -> WebJob:
         try:
-            if video_path.suffix.lower() not in SUPPORTED_EXTENSIONS:
+            if video_path and video_path.suffix.lower() not in SUPPORTED_EXTENSIONS:
                 raise ValueError("Formato nao suportado. Use .mp4, .mkv ou .avi.")
 
             job = WebJob(
                 id=uuid.uuid4().hex,
                 video_path=video_path,
                 original_name=original_name,
+                youtube_url=youtube_url,
                 created_at=time.time(),
             )
             with self.lock:
@@ -107,8 +109,8 @@ class JobManager:
         with self.lock:
             return sorted(self.jobs.values(), key=lambda item: item.created_at, reverse=True)
 
-    def start_burn(self, job_id: str) -> WebJob:
-        """Start creating a watch-ready video with burned subtitles."""
+    def start_burn(self, job_id: str, method: str = "soft") -> WebJob:
+        """Start creating a watch-ready video with burned/muxed subtitles."""
 
         with self.lock:
             job = self._get_job_locked(job_id)
@@ -116,14 +118,12 @@ class JobManager:
                 raise HTTPException(status_code=409, detail="Gere a legenda antes do video.")
             if job.burn_status == "running":
                 return job
-            if job.burn_status == "done" and job.burned_video_path and job.burned_video_path.exists():
-                return job
             job.burn_status = "running"
-            job.burn_message = "Gerando video com legenda embutida..."
+            job.burn_message = "Incorporando legenda ao vídeo..."
 
         worker = threading.Thread(
             target=self._burn_video,
-            args=(job_id,),
+            args=(job_id, method),
             name=f"burn-worker-{job_id[:8]}",
             daemon=True,
         )
@@ -156,14 +156,20 @@ class JobManager:
             job.message = "Iniciando processamento."
 
         try:
-            self.config = add_recent_video(self.config, job.video_path)
             cancel_event = self.cancel_events[job_id]
             pipeline = SubtitlePipeline(
                 self.config,
                 progress=lambda event: self._update_progress(job_id, event),
                 cancel_event=cancel_event,
             )
-            result = pipeline.process(job.video_path)
+            result = pipeline.process(job.video_path, youtube_url=job.youtube_url)
+            
+            with self.lock:
+                job = self.jobs[job_id]
+                job.video_path = result.video_path
+                job.original_name = result.video_path.name
+                self.config = add_recent_video(self.config, result.video_path)
+                
             self._complete(job_id, result)
         except Exception as exc:
             with self.lock:
@@ -197,7 +203,7 @@ class JobManager:
             job.preview = result.preview
             job.finished_at = time.time()
 
-    def _burn_video(self, job_id: str) -> None:
+    def _burn_video(self, job_id: str, method: str) -> None:
         try:
             with self.lock:
                 job = self.jobs[job_id]
@@ -206,13 +212,17 @@ class JobManager:
                 if subtitle_path is None:
                     raise RuntimeError("Legenda inexistente para incorporar ao video.")
 
-            output = burn_subtitle(video_path, subtitle_path)
+            if method == "soft":
+                from utils.ffmpeg import mux_subtitle
+                output = mux_subtitle(video_path, subtitle_path)
+            else:
+                output = burn_subtitle(video_path, subtitle_path)
 
             with self.lock:
                 job = self.jobs[job_id]
                 job.burned_video_path = output
                 job.burn_status = "done"
-                job.burn_message = "Video legendado pronto para assistir."
+                job.burn_message = f"Video legendado pronto ({method})."
         except Exception as exc:
             logging.exception("Falha ao gerar video legendado para job %s", job_id)
             with self.lock:
@@ -269,12 +279,20 @@ async def upload_video(file: UploadFile = File(...)) -> dict:
 
 
 @app.post("/api/jobs/path")
-def create_job_from_path(video_path: str = Form(...)) -> dict:
+def create_job_from_path(video_path: str = Form(None), youtube_url: str = Form(None)) -> dict:
     try:
-        path = Path(video_path).expanduser().resolve()
-        if not path.exists():
-            raise HTTPException(status_code=404, detail="Arquivo nao encontrado.")
-        job = manager.create_job(path, path.name)
+        if not video_path and not youtube_url:
+            raise HTTPException(status_code=400, detail="Forneça o caminho do vídeo ou a URL do YouTube.")
+        
+        path = None
+        original_name = "YouTube Video"
+        if video_path:
+            path = Path(video_path).expanduser().resolve()
+            if not path.exists():
+                raise HTTPException(status_code=404, detail="Arquivo nao encontrado.")
+            original_name = path.name
+            
+        job = manager.create_job(path, original_name, youtube_url=youtube_url)
         return serialize_job(job)
     except HTTPException:
         raise
@@ -299,8 +317,8 @@ def cancel_job(job_id: str) -> dict:
 
 
 @app.post("/api/jobs/{job_id}/burn")
-def create_burned_video(job_id: str) -> dict:
-    return serialize_job(manager.start_burn(job_id))
+def create_burned_video(job_id: str, method: str = "soft") -> dict:
+    return serialize_job(manager.start_burn(job_id, method=method))
 
 
 @app.get("/api/jobs/{job_id}/subtitle")

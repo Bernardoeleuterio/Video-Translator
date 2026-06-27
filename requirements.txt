@@ -10,3 +10,5 @@ fastapi>=0.111.0
 uvicorn[standard]>=0.30.0
 python-multipart>=0.0.9
 imageio-ffmpeg>=0.5.1
+youtube-transcript-api>=0.6.2
+yt-dlp>=2025.1.15

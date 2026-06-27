@@ -15,6 +15,7 @@ from src.translator import TranslationService
 from src.types import ProcessingResult, ProgressEvent
 from utils.ffmpeg import ensure_supported_video, extract_audio_chunks, get_video_duration
 from utils.hardware import detect_hardware
+from utils.youtube import extract_video_id, get_youtube_subtitles, download_youtube_video
 
 
 ProgressCallback = Callable[[ProgressEvent], None]
@@ -33,44 +34,101 @@ class SubtitlePipeline:
         self.progress = progress
         self.cancel_event = cancel_event
 
-    def process(self, video_path: Path) -> ProcessingResult:
-        """Generate a `.pt-BR.srt` subtitle next to the selected video."""
+    def process(self, video_path: Path | None, youtube_url: str | None = None) -> ProcessingResult:
+        """Generate a `.pt-BR.srt` subtitle next to the selected video or from a YouTube URL."""
 
         started = time.monotonic()
         chunks: list[Path] = []
         try:
+            # If no local video but YouTube URL is provided, download the video first
+            if video_path is None and youtube_url:
+                self.progress(
+                    ProgressEvent(
+                        stage="model",
+                        percent=5,
+                        message="Baixando vídeo do YouTube para processamento local...",
+                    )
+                )
+                output_dir = Path(self.config.get("interface", {}).get("default_folder", ""))
+                if not output_dir or not output_dir.exists():
+                    from src.config import ROOT_DIR
+                    output_dir = ROOT_DIR / "output"
+                
+                def dl_progress(p: float) -> None:
+                    # Map download percent (0-100) to progress percent (5-30)
+                    percent = 5 + (p / 100) * 25
+                    self.progress(
+                        ProgressEvent(
+                            stage="model",
+                            percent=percent,
+                            message=f"Baixando vídeo do YouTube ({p:.1f}%)...",
+                        )
+                    )
+                
+                video_path = download_youtube_video(youtube_url, output_dir, progress_cb=dl_progress)
+
+            if video_path is None:
+                raise ValueError("Nenhum arquivo de vídeo local ou URL do YouTube foi fornecido.")
+
             ensure_supported_video(video_path)
             output_path = video_path.with_name(f"{video_path.stem}.pt-BR.srt")
 
-            self.progress(
-                ProgressEvent(stage="model", percent=1, message="Detectando hardware disponivel...")
-            )
-            hardware = detect_hardware(self.config)
-            logging.info("Hardware selecionado: %s / %s", hardware.device, hardware.compute_type)
+            transcript = None
+            used_youtube_subtitles = False
+            
+            # Try to get subtitles directly from YouTube to avoid heavy transcription
+            if youtube_url:
+                video_id = extract_video_id(youtube_url)
+                if video_id:
+                    self.progress(
+                        ProgressEvent(
+                            stage="model",
+                            percent=32,
+                            message="Buscando legendas direto do YouTube...",
+                        )
+                    )
+                    try:
+                        transcript = get_youtube_subtitles(video_id)
+                        used_youtube_subtitles = True
+                        logging.info("Legendas obtidas direto do YouTube com sucesso. Pulando Whisper.")
+                    except Exception as exc:
+                        logging.warning("Não foi possível obter legendas do YouTube: %s. Usando transcrição local.", exc)
 
-            duration = get_video_duration(video_path)
-            chunk_minutes = int(self.config["processing"].get("chunk_minutes", 25))
-            self.progress(
-                ProgressEvent(
-                    stage="transcription",
-                    percent=10,
-                    message=f"Extraindo audio e dividindo video de {duration / 60:.1f} min...",
+            # Fallback to local transcription using Whisper
+            if transcript is None:
+                self.progress(
+                    ProgressEvent(
+                        stage="model",
+                        percent=35,
+                        message="Detectando hardware disponível...",
+                    )
                 )
-            )
-            chunks = extract_audio_chunks(video_path, chunk_minutes)
+                hardware = detect_hardware(self.config)
+                logging.info("Hardware selecionado: %s / %s", hardware.device, hardware.compute_type)
 
-            transcriber = WhisperTranscriber(self.config, hardware, self.progress)
-            transcriber.load()
-            transcript = transcriber.transcribe_chunks(chunks, chunk_minutes, self.cancel_event)
+                duration = get_video_duration(video_path)
+                chunk_minutes = int(self.config["processing"].get("chunk_minutes", 25))
+                self.progress(
+                    ProgressEvent(
+                        stage="transcription",
+                        percent=40,
+                        message=f"Extraindo áudio e dividindo vídeo de {duration / 60:.1f} min...",
+                    )
+                )
+                chunks = extract_audio_chunks(video_path, chunk_minutes)
+
+                transcriber = WhisperTranscriber(self.config, hardware, self.progress)
+                transcriber.load()
+                transcript = transcriber.transcribe_chunks(chunks, chunk_minutes, self.cancel_event)
 
             if self.cancel_event.is_set():
-                raise RuntimeError("Processamento cancelado pelo usuario.")
+                raise RuntimeError("Processamento cancelado pelo usuário.")
 
             translator = TranslationService(self.config, self.progress)
             translated = translator.translate(transcript, self.cancel_event)
 
             self.progress(
-                ProgressEvent(stage="subtitle", percent=82, message="Ajustando sincronizacao e leitura...")
+                ProgressEvent(stage="subtitle", percent=82, message="Ajustando sincronização e leitura...")
             )
             cues = normalize_cue_timing(translated, self.config)
 
@@ -81,17 +139,18 @@ class SubtitlePipeline:
             preview = build_preview(cues)
 
             elapsed = time.monotonic() - started
+            method_name = "Via YouTube" if used_youtube_subtitles else "Via Whisper"
             self.progress(
                 ProgressEvent(
                     stage="done",
                     percent=100,
-                    message=f"Legenda concluida em {elapsed / 60:.1f} min.",
+                    message=f"Legenda concluída em {elapsed / 60:.1f} min ({method_name}).",
                     eta_seconds=0,
                 )
             )
             return ProcessingResult(video_path=video_path, subtitle_path=output_path, preview=preview)
         except Exception:
-            logging.exception("Falha ao processar video %s", video_path)
+            logging.exception("Falha ao processar vídeo %s", video_path)
             self.progress(
                 ProgressEvent(
                     stage="error",
@@ -106,4 +165,4 @@ class SubtitlePipeline:
                 try:
                     shutil.rmtree(temp_dir, ignore_errors=True)
                 except Exception:
-                    logging.exception("Falha ao remover arquivos temporarios em %s", temp_dir)
+                    logging.exception("Falha ao remover arquivos temporários em %s", temp_dir)
