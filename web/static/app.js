@@ -11,6 +11,9 @@ const progressValue = document.querySelector("#progressValue");
 const messageValue = document.querySelector("#messageValue");
 const cancelButton = document.querySelector("#cancelButton");
 const downloadButton = document.querySelector("#downloadButton");
+const burnButton = document.querySelector("#burnButton");
+const videoButton = document.querySelector("#videoButton");
+const burnMessage = document.querySelector("#burnMessage");
 const previewValue = document.querySelector("#previewValue");
 
 let activeJobId = null;
@@ -73,6 +76,9 @@ function renderDetails(job) {
     messageValue.textContent = "Nenhum vídeo em execução.";
     cancelButton.disabled = true;
     downloadButton.classList.add("disabled");
+    burnButton.disabled = true;
+    videoButton.classList.add("disabled");
+    burnMessage.textContent = "Vídeo legendado ainda não gerado.";
     previewValue.textContent = "A legenda aparecerá aqui quando estiver pronta.";
     return;
   }
@@ -88,6 +94,9 @@ function renderDetails(job) {
   messageValue.textContent = current.error || current.message;
   cancelButton.disabled = !["queued", "running"].includes(current.status);
   cancelButton.dataset.jobId = current.id;
+  burnButton.disabled = current.status !== "done" || current.burn_status === "running";
+  burnButton.dataset.jobId = current.id;
+  burnMessage.textContent = current.burn_message || "Vídeo legendado ainda não gerado.";
 
   if (current.status === "done") {
     downloadButton.href = `/api/jobs/${current.id}/subtitle`;
@@ -97,6 +106,14 @@ function renderDetails(job) {
     downloadButton.href = "#";
     downloadButton.classList.add("disabled");
     previewValue.textContent = current.preview || "Aguardando conclusão.";
+  }
+
+  if (current.burn_status === "done") {
+    videoButton.href = `/api/jobs/${current.id}/video`;
+    videoButton.classList.remove("disabled");
+  } else {
+    videoButton.href = "#";
+    videoButton.classList.add("disabled");
   }
 }
 
@@ -156,6 +173,14 @@ cancelButton.addEventListener("click", async () => {
   const jobId = cancelButton.dataset.jobId;
   if (!jobId) return;
   await fetch(`/api/jobs/${jobId}/cancel`, { method: "POST" });
+  await refreshJobs();
+});
+burnButton.addEventListener("click", async () => {
+  const jobId = burnButton.dataset.jobId;
+  if (!jobId) return;
+  burnButton.disabled = true;
+  burnMessage.textContent = "Gerando vídeo com legenda embutida...";
+  await fetch(`/api/jobs/${jobId}/burn`, { method: "POST" });
   await refreshJobs();
 });
 

@@ -31,5 +31,7 @@ o arquivo diretamente e salva o `.pt-BR.srt` na mesma pasta do vídeo.
 - `GET /api/jobs`: lista jobs.
 - `GET /api/jobs/{job_id}`: consulta um job.
 - `POST /api/jobs/{job_id}/cancel`: cancela um job.
+- `POST /api/jobs/{job_id}/burn`: gera um video com legenda embutida.
 - `GET /api/jobs/{job_id}/subtitle`: baixa a legenda.
+- `GET /api/jobs/{job_id}/video`: baixa o video com legenda embutida.
 - `GET /api/logs`: baixa os logs.

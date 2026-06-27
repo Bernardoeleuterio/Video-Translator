@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from src.config import ROOT_DIR, add_recent_video, load_config
 from src.pipeline import SubtitlePipeline
 from src.types import ProcessingResult, ProgressEvent
-from utils.ffmpeg import SUPPORTED_EXTENSIONS
+from utils.ffmpeg import SUPPORTED_EXTENSIONS, burn_subtitle
 from utils.logger import LOG_FILE, setup_logging
 
 
@@ -45,6 +45,9 @@ class WebJob:
     started_at: float | None = None
     finished_at: float | None = None
     subtitle_path: Path | None = None
+    burned_video_path: Path | None = None
+    burn_status: JobStatus = "queued"
+    burn_message: str = "Video legendado ainda nao gerado."
     preview: str = ""
     error: str = ""
 
@@ -103,6 +106,29 @@ class JobManager:
     def list_jobs(self) -> list[WebJob]:
         with self.lock:
             return sorted(self.jobs.values(), key=lambda item: item.created_at, reverse=True)
+
+    def start_burn(self, job_id: str) -> WebJob:
+        """Start creating a watch-ready video with burned subtitles."""
+
+        with self.lock:
+            job = self._get_job_locked(job_id)
+            if job.status != "done" or job.subtitle_path is None:
+                raise HTTPException(status_code=409, detail="Gere a legenda antes do video.")
+            if job.burn_status == "running":
+                return job
+            if job.burn_status == "done" and job.burned_video_path and job.burned_video_path.exists():
+                return job
+            job.burn_status = "running"
+            job.burn_message = "Gerando video com legenda embutida..."
+
+        worker = threading.Thread(
+            target=self._burn_video,
+            args=(job_id,),
+            name=f"burn-worker-{job_id[:8]}",
+            daemon=True,
+        )
+        worker.start()
+        return self.get_job(job_id)
 
     def _get_job_locked(self, job_id: str) -> WebJob:
         try:
@@ -171,6 +197,29 @@ class JobManager:
             job.preview = result.preview
             job.finished_at = time.time()
 
+    def _burn_video(self, job_id: str) -> None:
+        try:
+            with self.lock:
+                job = self.jobs[job_id]
+                video_path = job.video_path
+                subtitle_path = job.subtitle_path
+                if subtitle_path is None:
+                    raise RuntimeError("Legenda inexistente para incorporar ao video.")
+
+            output = burn_subtitle(video_path, subtitle_path)
+
+            with self.lock:
+                job = self.jobs[job_id]
+                job.burned_video_path = output
+                job.burn_status = "done"
+                job.burn_message = "Video legendado pronto para assistir."
+        except Exception as exc:
+            logging.exception("Falha ao gerar video legendado para job %s", job_id)
+            with self.lock:
+                job = self.jobs[job_id]
+                job.burn_status = "error"
+                job.burn_message = str(exc)
+
 
 setup_logging()
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -190,6 +239,7 @@ def serialize_job(job: WebJob) -> dict:
     data = asdict(job)
     data["video_path"] = str(job.video_path)
     data["subtitle_path"] = str(job.subtitle_path) if job.subtitle_path else None
+    data["burned_video_path"] = str(job.burned_video_path) if job.burned_video_path else None
     return data
 
 
@@ -248,6 +298,11 @@ def cancel_job(job_id: str) -> dict:
     return serialize_job(manager.cancel_job(job_id))
 
 
+@app.post("/api/jobs/{job_id}/burn")
+def create_burned_video(job_id: str) -> dict:
+    return serialize_job(manager.start_burn(job_id))
+
+
 @app.get("/api/jobs/{job_id}/subtitle")
 def download_subtitle(job_id: str) -> FileResponse:
     job = manager.get_job(job_id)
@@ -257,6 +312,18 @@ def download_subtitle(job_id: str) -> FileResponse:
         job.subtitle_path,
         media_type="application/x-subrip",
         filename=job.subtitle_path.name,
+    )
+
+
+@app.get("/api/jobs/{job_id}/video")
+def download_burned_video(job_id: str) -> FileResponse:
+    job = manager.get_job(job_id)
+    if job.burn_status != "done" or job.burned_video_path is None:
+        raise HTTPException(status_code=409, detail="Video legendado ainda nao esta pronto.")
+    return FileResponse(
+        job.burned_video_path,
+        media_type="video/mp4",
+        filename=job.burned_video_path.name,
     )
 
 

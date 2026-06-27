@@ -299,6 +299,12 @@ button:disabled,
   margin: 16px 0;
 }
 
+.message.compact {
+  min-height: 28px;
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+
 .preview-block {
   min-height: 260px;
 }

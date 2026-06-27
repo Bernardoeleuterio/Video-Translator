@@ -26,6 +26,7 @@ Daha17_Ep01.pt-BR.srt
 - Pré-visualização da legenda gerada.
 - Botão para abrir a legenda ao finalizar.
 - Opção de incorporar a legenda ao vídeo com FFmpeg.
+- No site local, botão para gerar e baixar o vídeo com legenda embutida.
 - Logs completos em `logs/app.log`.
 - Configuração persistente em `config.json`.
 - Projeto preparado para GitHub, CI, testes, lint e build por Release.
@@ -125,7 +126,9 @@ O site oferece duas formas de adicionar episódios:
 - upload pelo navegador, salvando o vídeo temporariamente em `output/uploads`;
 - caminho local, preservando a geração da legenda na mesma pasta do arquivo original.
 
-Quando o processamento terminar, use `Baixar SRT` para salvar a legenda gerada.
+Quando o processamento terminar, use `Baixar SRT` para salvar a legenda gerada ou
+`Gerar vídeo legendado` para criar uma cópia do episódio com a legenda embutida.
+Depois que o vídeo terminar de ser criado, use `Baixar vídeo`.
 
 ## Configuração
 
