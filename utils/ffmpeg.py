@@ -3,12 +3,39 @@
 from __future__ import annotations
 
 import logging
+import re
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 
 
 SUPPORTED_EXTENSIONS = {".mp4", ".mkv", ".avi"}
+
+
+def _resolve_ffmpeg() -> str:
+    """Return a usable FFmpeg executable from PATH or imageio-ffmpeg."""
+
+    system_ffmpeg = shutil.which("ffmpeg")
+    if system_ffmpeg:
+        return system_ffmpeg
+
+    try:
+        import imageio_ffmpeg
+
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception as exc:
+        logging.exception("FFmpeg nao encontrado no PATH nem via imageio-ffmpeg.")
+        raise RuntimeError(
+            "FFmpeg nao encontrado. Instale o FFmpeg ou execute "
+            "`pip install imageio-ffmpeg`."
+        ) from exc
+
+
+def _resolve_ffprobe() -> str | None:
+    """Return ffprobe from PATH when available."""
+
+    return shutil.which("ffprobe")
 
 
 def ensure_supported_video(video_path: Path) -> None:
@@ -25,24 +52,36 @@ def ensure_supported_video(video_path: Path) -> None:
 
 
 def get_video_duration(video_path: Path) -> float:
-    """Return media duration in seconds using ffprobe."""
+    """Return media duration in seconds using ffprobe or FFmpeg fallback."""
 
     try:
-        command = [
-            "ffprobe",
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "default=noprint_wrappers=1:nokey=1",
-            str(video_path),
-        ]
-        result = subprocess.run(command, capture_output=True, text=True, check=True)
-        return float(result.stdout.strip())
-    except FileNotFoundError as exc:
-        logging.exception("ffprobe nao encontrado.")
-        raise RuntimeError("FFmpeg/ffprobe nao encontrado no PATH.") from exc
+        ffprobe = _resolve_ffprobe()
+        if ffprobe:
+            command = [
+                ffprobe,
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(video_path),
+            ]
+            result = subprocess.run(command, capture_output=True, text=True, check=True)
+            return float(result.stdout.strip())
+
+        ffmpeg = _resolve_ffmpeg()
+        result = subprocess.run(
+            [ffmpeg, "-i", str(video_path)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        match = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", result.stderr)
+        if not match:
+            raise RuntimeError("Nao foi possivel ler a duracao do video com FFmpeg.")
+        hours, minutes, seconds = match.groups()
+        return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
     except Exception:
         logging.exception("Falha ao obter duracao de %s", video_path)
         raise
@@ -55,8 +94,9 @@ def extract_audio_chunks(video_path: Path, chunk_minutes: int) -> list[Path]:
         temp_dir = Path(tempfile.mkdtemp(prefix="video_translator_"))
         chunk_seconds = max(60, int(chunk_minutes) * 60)
         output_pattern = temp_dir / "chunk_%03d.wav"
+        ffmpeg = _resolve_ffmpeg()
         command = [
-            "ffmpeg",
+            ffmpeg,
             "-y",
             "-i",
             str(video_path),
@@ -78,9 +118,6 @@ def extract_audio_chunks(video_path: Path, chunk_minutes: int) -> list[Path]:
         if not chunks:
             raise RuntimeError("Nenhum chunk de audio foi gerado pelo FFmpeg.")
         return chunks
-    except FileNotFoundError as exc:
-        logging.exception("ffmpeg nao encontrado.")
-        raise RuntimeError("FFmpeg nao encontrado no PATH.") from exc
     except subprocess.CalledProcessError as exc:
         logging.exception("FFmpeg falhou: %s", exc.stderr)
         raise RuntimeError(f"Falha ao extrair audio: {exc.stderr}") from exc
@@ -95,8 +132,9 @@ def burn_subtitle(video_path: Path, subtitle_path: Path) -> Path:
     try:
         output_path = video_path.with_name(f"{video_path.stem}.pt-BR.legendado{video_path.suffix}")
         subtitle = str(subtitle_path).replace("\\", "/").replace(":", r"\:")
+        ffmpeg = _resolve_ffmpeg()
         command = [
-            "ffmpeg",
+            ffmpeg,
             "-y",
             "-i",
             str(video_path),

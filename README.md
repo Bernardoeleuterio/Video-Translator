@@ -54,7 +54,7 @@ Daha17_Ep01.pt-BR.srt
 
 - Windows 10 ou 11.
 - Python 3.10 ou superior.
-- FFmpeg instalado e disponível no PATH.
+- FFmpeg instalado e disponível no PATH, ou o fallback automático `imageio-ffmpeg`.
 - Internet no primeiro uso para baixar o modelo Whisper e para a tradução via `deep-translator`.
 - Opcional: GPU NVIDIA com CUDA configurado.
 
@@ -72,6 +72,10 @@ Depois feche e abra o terminal e valide:
 ffmpeg -version
 ffprobe -version
 ```
+
+Se o FFmpeg não estiver no PATH, o projeto tenta usar automaticamente o pacote
+`imageio-ffmpeg`, incluído em `requirements.txt`. Para vídeos longos e geração de vídeo
+com legenda embutida, ainda é recomendado instalar o FFmpeg completo no Windows.
 
 ## Ambiente virtual
 
@@ -204,7 +208,9 @@ git push -u origin main
 
 ### FFmpeg não encontrado
 
-Instale o FFmpeg e confirme que `ffmpeg` e `ffprobe` funcionam no terminal.
+Instale as dependências com `pip install -r requirements.txt`. O pacote `imageio-ffmpeg`
+fornece um FFmpeg local quando o Windows não encontra `ffmpeg` no PATH. Se ainda falhar,
+instale o FFmpeg completo e confirme que `ffmpeg` e `ffprobe` funcionam no terminal.
 
 ### O modelo Whisper demora para carregar
 

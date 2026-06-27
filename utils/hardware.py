@@ -24,7 +24,16 @@ def detect_hardware(config: dict) -> HardwareInfo:
     cpu_threads = int(config.get("hardware", {}).get("cpu_threads") or os.cpu_count() or 1)
     use_gpu = bool(config.get("hardware", {}).get("use_gpu", True))
     try:
-        import torch
+        import torch  # type: ignore[import-not-found]
+    except ModuleNotFoundError:
+        logging.info("Torch nao instalado; usando CPU.")
+        return HardwareInfo(
+            device="cpu",
+            compute_type=config["whisper"].get("compute_type_cpu", "int8"),
+            cpu_threads=cpu_threads,
+            cuda_available=False,
+        )
+    try:
 
         cuda_available = bool(torch.cuda.is_available())
         if use_gpu and cuda_available:

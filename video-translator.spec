@@ -23,6 +23,7 @@ a = Analysis(
         "fastapi",
         "uvicorn",
         "multipart",
+        "imageio_ffmpeg",
     ],
     hookspath=[],
     hooksconfig={},
