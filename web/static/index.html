@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Video Translator</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="topbar">
+        <div>
+          <h1>Video Translator</h1>
+          <p>Turco para português do Brasil</p>
+        </div>
+        <a class="ghost-button" href="/api/logs">Logs</a>
+      </section>
+
+      <section class="workspace">
+        <div class="panel queue-panel">
+          <div class="panel-header">
+            <h2>Novo episódio</h2>
+            <span class="badge">Whisper large-v3</span>
+          </div>
+
+          <form id="uploadForm" class="dropzone">
+            <input id="videoFile" type="file" accept=".mp4,.mkv,.avi" />
+            <strong>Selecionar vídeo</strong>
+            <span>.mp4, .mkv ou .avi</span>
+          </form>
+
+          <form id="pathForm" class="path-form">
+            <label for="videoPath">Caminho local</label>
+            <div class="inline-control">
+              <input
+                id="videoPath"
+                name="videoPath"
+                type="text"
+                placeholder="C:\Series\Daha17_Ep01.mp4"
+              />
+              <button type="submit">Adicionar</button>
+            </div>
+          </form>
+
+          <div class="job-list" id="jobList"></div>
+        </div>
+
+        <aside class="panel detail-panel">
+          <div class="panel-header">
+            <h2>Processamento</h2>
+            <span id="statusPill" class="status-pill idle">Aguardando</span>
+          </div>
+
+          <div class="metric-grid">
+            <div>
+              <span>Etapa</span>
+              <strong id="stageValue">-</strong>
+            </div>
+            <div>
+              <span>Tempo restante</span>
+              <strong id="etaValue">--</strong>
+            </div>
+          </div>
+
+          <div class="progress-wrap">
+            <div class="progress-track">
+              <div id="progressBar" class="progress-bar"></div>
+            </div>
+            <span id="progressValue">0%</span>
+          </div>
+
+          <p id="messageValue" class="message">Nenhum vídeo em execução.</p>
+
+          <div class="actions">
+            <button id="cancelButton" class="danger" type="button" disabled>Cancelar</button>
+            <a id="downloadButton" class="primary-link disabled" href="#">Baixar SRT</a>
+          </div>
+
+          <div class="preview-block">
+            <h3>Prévia</h3>
+            <pre id="previewValue">A legenda aparecerá aqui quando estiver pronta.</pre>
+          </div>
+        </aside>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

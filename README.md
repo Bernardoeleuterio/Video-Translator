@@ -12,6 +12,7 @@ Daha17_Ep01.pt-BR.srt
 ## Funcionalidades
 
 - Interface moderna com CustomTkinter e tema escuro.
+- Interface web local com upload, fila, progresso e download da legenda.
 - Seleção de vídeos pelo explorador de arquivos.
 - Arrastar e soltar vídeos quando `tkinterdnd2` estiver disponível.
 - Processamento de múltiplos episódios em fila.
@@ -93,7 +94,7 @@ Para desenvolvimento:
 pip install -r requirements-dev.txt
 ```
 
-## Executar a aplicação
+## Executar a aplicação desktop
 
 ```powershell
 python main.py
@@ -106,6 +107,25 @@ Na interface:
 3. Clique em `Iniciar`.
 4. Aguarde a geração da legenda.
 5. Clique em `Abrir legenda` ao finalizar.
+
+## Executar o site local
+
+```powershell
+python -m src.web_app
+```
+
+Depois acesse:
+
+```text
+http://127.0.0.1:8000
+```
+
+O site oferece duas formas de adicionar episódios:
+
+- upload pelo navegador, salvando o vídeo temporariamente em `output/uploads`;
+- caminho local, preservando a geração da legenda na mesma pasta do arquivo original.
+
+Quando o processamento terminar, use `Baixar SRT` para salvar a legenda gerada.
 
 ## Configuração
 
